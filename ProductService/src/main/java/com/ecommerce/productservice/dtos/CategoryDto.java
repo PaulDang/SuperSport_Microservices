@@ -2,6 +2,7 @@ package com.ecommerce.productservice.dtos;
 
 import lombok.Getter;
 import lombok.Setter;
+
 import java.sql.Date;
 
 @Getter

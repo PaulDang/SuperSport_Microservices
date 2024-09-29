@@ -4,7 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.sql.Date;
+import java.util.Date;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -14,7 +15,7 @@ public class Category {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    private int categoryId;
+    private UUID categoryId;
 
     @Column(name = "category_title")
     private String categoryTitle;

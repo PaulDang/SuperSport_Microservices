@@ -4,7 +4,9 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.sql.Date;
+import java.util.Date;
+import java.util.UUID;
+
 
 @Getter
 @Setter
@@ -14,7 +16,7 @@ public class Product {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    private int productId;
+    private UUID productId;
 
     @Column(name = "product_title")
     private String productTitle;
