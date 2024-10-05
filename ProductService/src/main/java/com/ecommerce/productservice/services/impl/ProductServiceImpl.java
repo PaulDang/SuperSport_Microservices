@@ -6,52 +6,51 @@ import com.ecommerce.productservice.models.Product;
 import com.ecommerce.productservice.repositories.ProductRepository;
 import com.ecommerce.productservice.services.ProductService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.ObjectUtils;
 
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
 public class ProductServiceImpl implements ProductService {
 
-    @Autowired
-    private ProductRepository productRepository;
+    private final ProductRepository productRepository;
+    private final ProductMapper productMapper;
 
-    @Autowired
-    private ProductMapper productMapper;
+    public ProductServiceImpl(ProductRepository productRepository, ProductMapper productMapper) {
+        this.productRepository = productRepository;
+        this.productMapper = productMapper;
+    }
 
     @Override
     @Transactional
-    public Product saveProduct(ProductDto productDto) {
-
-        Optional.ofNullable(productDto)
-                .orElseThrow(() -> {
-                    log.error("Product is null");
-                    return new IllegalArgumentException("Product cannot be null");
-                });
+    public ProductDto saveProduct(ProductDto productDto) {
+        validateProductDto(productDto);
 
         if (ObjectUtils.isEmpty(productDto.getProductTitle()) || productDto.getPriceUnit() == null) {
-            log.info("Product title and price unit should not be empty");
+            log.error("Product title or price unit is empty");
             throw new IllegalArgumentException("Product title and price unit must not be empty");
         }
+
         Product newProduct = productMapper.productDtoToProduct(productDto);
-        Product savedProduct = productRepository.save(newProduct);
+        ProductDto savedProduct = productMapper
+                .productToProductDto(productRepository.save(newProduct));
+
         log.info("Product with ID {} successfully created", savedProduct.getProductId());
 
         return savedProduct;
     }
 
     @Override
-    public Product getProductByProductId(UUID productId) {
-        if(productId == null) {
-            return null;
-        }
-        return Optional.ofNullable(productRepository.findProductByProductId(productId))
+    @Transactional(readOnly = true)
+    public ProductDto getProductByProductId(UUID productId) {
+        Objects.requireNonNull(productId, "Product ID cannot be null");
+        return Optional
+                .ofNullable(productRepository.findProductByProductId(productId))
+                .map(productMapper::productToProductDto)
                 .orElseThrow(() -> {
                     log.error("Product ID {} does not exist", productId);
                     return new IllegalArgumentException("Product ID " + productId + " does not exist");
@@ -60,69 +59,83 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
-    public Product updateProduct(UUID productId, ProductDto productDto) {
-        Product oldProduct = Optional.ofNullable(getProductByProductId(productId))
-                .orElseThrow(() -> {
-                    log.error("Product ID {} does not exist", productId);
-                    return new IllegalArgumentException("Product ID " + productId + " does not exist");
-                });
-        Optional.ofNullable(productDto)
-                .orElseThrow(() -> {
-                    log.error("Product is null");
-                    return new IllegalArgumentException("Product does need to be updated");
-                });
-        if (ObjectUtils.isEmpty(productDto.getProductTitle()) || productDto.getPriceUnit() == null) {
-            log.info("Product title and price unit should not be empty");
-            throw new IllegalArgumentException("Product title and price unit must not be empty");
+    public ProductDto updateProduct(UUID productId, ProductDto productDto) {
+        Objects.requireNonNull(productId, "Product ID cannot be null");
+        validateProductDto(productDto);
+
+        Product oldProduct = productRepository.findProductByProductId(productId);
+        if (Optional.ofNullable(oldProduct).isEmpty()) {
+            log.error("Product ID {} does not exist", productId);
+            throw new IllegalArgumentException("Product ID " + productId + " does not exist");
         }
 
         log.info("Updating product with ID {}", productId);
         updateProductFields(oldProduct, productDto);
 
-        Product updatedProduct = productRepository.save(oldProduct);
+        ProductDto updatedProduct = productMapper
+                .productToProductDto(productRepository.save(oldProduct));
         log.info("Product with ID {} successfully updated", productId);
 
         return updatedProduct;
     }
 
     private void updateProductFields(Product oldProduct, ProductDto productDto) {
-        if (productDto.getProductTitle() != null) {
-            oldProduct.setProductTitle(productDto.getProductTitle());
-        }
-        if (productDto.getPriceUnit() != null) {
-            oldProduct.setPriceUnit(productDto.getPriceUnit());
-        }
-        if (productDto.getSku() != null) {
-            oldProduct.setSku(productDto.getSku());
-        }
-        if (productDto.getImageUrl() != null) {
-            oldProduct.setImageUrl(productDto.getImageUrl());
-        }
-        if (productDto.getUploadAt() != null) {
-            oldProduct.setUploadAt(productDto.getUploadAt());
-        }
+        Optional.ofNullable(productDto.getProductTitle()).ifPresent(oldProduct::setProductTitle);
+        Optional.ofNullable(productDto.getPriceUnit()).ifPresent(oldProduct::setPriceUnit);
+        Optional.ofNullable(productDto.getSku()).ifPresent(oldProduct::setSku);
+        Optional.ofNullable(productDto.getImageUrl()).ifPresent(oldProduct::setImageUrl);
+        oldProduct.setUploadAt(new Date());
         oldProduct.setQuantity(productDto.getQuantity());
+    }
+
+    private void validateProductDto(ProductDto productDto) {
+        Objects.requireNonNull(productDto, "Product cannot be null");
+
+        if (ObjectUtils.isEmpty(productDto.getProductTitle()) || productDto.getPriceUnit() == null) {
+            log.error("Product title or price unit is empty");
+            throw new IllegalArgumentException("Product title and price unit must not be empty");
+        }
+
+        if (productDto.getPriceUnit() < 0) {
+            log.error("Price unit must be non-negative");
+            throw new IllegalArgumentException("Price unit must be non-negative");
+        }
+
+        if (productDto.getQuantity() < 0) {
+            log.error("Quantity must be non-negative");
+            throw new IllegalArgumentException("Quantity must be non-negative");
+        }
     }
 
     @Override
     @Transactional
     public void deleteProduct(UUID productId) {
-        Product oldProduct = getProductByProductId(productId);
-
-        log.info("Deleting product with ID {}", oldProduct.getProductId());
-        productRepository.deleteByProductId(oldProduct.getProductId());
-        log.info("Product with ID {} successfully deleted", oldProduct.getProductId());
+        Objects.requireNonNull(productId, "Product ID cannot be null");
+        Product oldProduct = productRepository.findProductByProductId(productId);
+        if (Optional.ofNullable(oldProduct).isPresent()) {
+            log.info("Deleting product with ID {}", oldProduct.getProductId());
+            productRepository.deleteProductByProductId(oldProduct.getProductId());
+            log.info("Product with ID {} successfully deleted", oldProduct.getProductId());
+        }
     }
 
     @Override
-    public List<Product> getAllProducts() {
-        log.info("Start Fetching all products");
+    @Transactional
+    public void deleteAllProducts() {
         List<Product> products = productRepository.findAll();
-        if (products.isEmpty()) {
-            log.warn("No products found");
-        } else {
-            log.info("Fetched {} products", products.size());
-        }
-        return products;
+        log.info("Deleting all {} products", products.size());
+        productRepository.deleteAll();
+        log.info("Deleted all products");
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductDto> getAllProducts() {
+        log.info("Fetching all products");
+        List<Product> products = productRepository.findAll();
+        log.info(products.isEmpty() ? "No products found" : "Fetched {} products", products.size());
+        return products.stream()
+                .map(productMapper::productToProductDto)
+                .toList();
     }
 }
